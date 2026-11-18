@@ -40,11 +40,11 @@ if ! docker info >/dev/null 2>&1; then
 fi
 
 if docker image inspect clouddesk/desktop:codespaces >/dev/null 2>&1; then
-  echo "imagen presente; arrancando sin reconstruir"
-  ./scripts/codespaces-up.sh --no-build --if-needed
+  echo "imagen presente; recreando el contenedor con el entorno actual"
+  ./scripts/codespaces-up.sh --no-build
 else
   echo "construyendo la imagen del escritorio (puede tardar 10-20 min)"
-  ./scripts/codespaces-up.sh --if-needed
+  ./scripts/codespaces-up.sh
 fi
 
 echo "=== clouddesk boot ok $(date -Is) ==="

@@ -82,6 +82,7 @@ const REQUIRED = [
   ".github/workflows/ci.yml",
   ".github/workflows/release.yml",
   ".github/workflows/deploy.yml",
+  ".github/workflows/e2e.yml",
   "docs/AUDITORIA.md",
   "docs/DESPLIEGUE-ORACLE.md",
   "docs/CI-CD.md",
@@ -192,6 +193,7 @@ const workflows = [
   ".github/workflows/ci.yml",
   ".github/workflows/release.yml",
   ".github/workflows/deploy.yml",
+  ".github/workflows/e2e.yml",
 ];
 for (const wf of workflows) {
   if (!(await exists(wf))) continue;

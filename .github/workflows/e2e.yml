@@ -1,0 +1,115 @@
+name: E2E escritorio
+
+# Ejecuta el contenedor real (XFCE + Chromium + KasmVNC) en un runner limpio y
+# comprueba, por CDP, que el navegador se comporta como PC de escritorio.
+# No usa emulación de dispositivos ni modifica la detección de la app.
+on:
+  workflow_dispatch:
+    inputs:
+      app_url:
+        description: "URL de la web app (vacío = la del script)"
+        required: false
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: e2e-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  escritorio:
+    name: Escritorio real + CDP
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Construir la imagen del escritorio
+        uses: docker/build-push-action@v6
+        with:
+          context: desktop
+          load: true
+          tags: clouddesk/desktop:e2e
+          cache-from: type=gha,scope=desktop-e2e
+          cache-to: type=gha,mode=max,scope=desktop-e2e
+
+      - name: Arrancar el escritorio (CDP solo en loopback)
+        run: |
+          set -euo pipefail
+          docker run -d --name desk-e2e \
+            --shm-size=1g \
+            -p 127.0.0.1:8444:8444 \
+            -p 127.0.0.1:9222:9222 \
+            -e TZ=UTC \
+            -e RESOLUTION=1366x768 \
+            -e AGENT_TOKEN=0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef \
+            -e VNC_USER=desk \
+            -e VNC_PASSWORD=e2e-password-1234 \
+            -e IDLE_STOP_MINUTES=0 \
+            -e CLOUDDESK_E2E_DEBUG=1 \
+            clouddesk/desktop:e2e
+          echo "esperando a KasmVNC y CDP..."
+          for _ in $(seq 1 120); do
+            if curl -fsS -o /dev/null http://127.0.0.1:8444/ \
+               && curl -fsS -o /dev/null http://127.0.0.1:9222/json/version; then
+              echo "listo"
+              exit 0
+            fi
+            sleep 3
+          done
+          docker logs --tail=120 desk-e2e
+          exit 1
+
+      - name: Estado del escritorio
+        run: |
+          docker exec desk-e2e python3 - <<'PY'
+          import json, os, urllib.request
+          req = urllib.request.Request(
+              "http://127.0.0.1:8099/status",
+              headers={"X-CloudDesk-Token": os.environ["AGENT_TOKEN"]},
+          )
+          data = json.load(urllib.request.urlopen(req, timeout=5))
+          print(json.dumps({
+              "session": data["session"]["state"],
+              "resolution": data["session"]["resolution"],
+              "chromium": data["chromium"],
+              "cpu": data["cpu"],
+              "memory": data["memory"],
+          }, indent=2))
+          PY
+
+      - name: Verificación de esMovil()
+        run: node tools/check-deteccion-clouddesk.mjs
+
+      - name: Prueba E2E en el Chromium real
+        env:
+          APP_URL: ${{ inputs.app_url }}
+        run: |
+          set -euo pipefail
+          args=(--cdp http://127.0.0.1:9222)
+          if [ -n "${APP_URL:-}" ]; then args+=(--url "$APP_URL"); fi
+          node tools/e2e-desktop.mjs "${args[@]}"
+
+      - name: Capturas y registros
+        if: always()
+        run: |
+          docker logs --tail=200 desk-e2e > desktop.log 2>&1 || true
+          ls -la tests/.artifacts || true
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: e2e-evidencias
+          path: |
+            tests/.artifacts/*.png
+            desktop.log
+          if-no-files-found: warn
+          retention-days: 7
+
+      - name: Limpiar
+        if: always()
+        run: docker rm -f desk-e2e || true
