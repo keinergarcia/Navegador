@@ -100,6 +100,7 @@ server:
 command_line:
   prompt: false
 
-logging:
-  log_dest: logfile
-  level: 30
+# Sin bloque `logging`: KasmVNC 1.5.2 exige log_writer_name, log_dest y level
+# juntos ("either all keys or none must be present"); con "none" usa sus
+# valores por defecto y la sesión arranca. Los logs salen por stdout, que
+# supervisord ya redirige a `docker logs`.
