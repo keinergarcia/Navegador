@@ -214,7 +214,18 @@ jobs:
       - name: Prueba de arranque del gateway
         run: |
           set -euo pipefail
-          docker run -d --name gateway-ci -p 8088:80 \
+          certs="$RUNNER_TEMP/certs"
+          mkdir -p "$certs/live/desk.example.com"
+          openssl req -x509 -newkey rsa:2048 -nodes -days 1 \
+            -subj "/CN=desk.example.com" \
+            -addext "subjectAltName=DNS:desk.example.com,DNS:vnc.example.com" \
+            -keyout "$certs/live/desk.example.com/privkey.pem" \
+            -out "$certs/live/desk.example.com/fullchain.pem" 2>/dev/null
+          chmod -R a+r "$certs"
+
+          docker run -d --name gateway-ci \
+            -p 8088:80 -p 8443:443 \
+            -v "$certs:/etc/letsencrypt:ro" \
             -e PANEL_HOST=desk.example.com \
             -e VNC_HOST=vnc.example.com \
             -e VNC_AUTH_B64=ZGVzazpjaS1wYXNzd29yZC0xMjM0 \
@@ -222,10 +233,20 @@ jobs:
             -e ACME_EMAIL=ci@example.com \
             clouddesk/gateway:ci
           trap 'docker rm -f gateway-ci >/dev/null 2>&1 || true' EXIT
-          for _ in $(seq 1 20); do
-            if curl -fsS -o /dev/null http://127.0.0.1:8088/healthz; then break; fi
+
+          code=""
+          for _ in $(seq 1 30); do
+            code="$(curl -sk -o /dev/null -w '%{http_code}' \
+              -H 'Host: desk.example.com' https://127.0.0.1:8443/healthz || true)"
+            [ "$code" = "200" ] && break
             sleep 1
           done
-          code="$(curl -s -o /dev/null -w '%{http_code}' -H 'Host: desk.example.com' http://127.0.0.1:8088/healthz)"
-          [ "$code" = "200" ] || { docker logs gateway-ci; exit 1; }
-          echo "gateway ok (HTTP $code)"
+          if [ "$code" != "200" ]; then
+            docker logs gateway-ci || true
+            exit 1
+          fi
+
+          redirect="$(curl -s -o /dev/null -w '%{http_code}' \
+            -H 'Host: desk.example.com' http://127.0.0.1:8088/healthz || true)"
+          [ "$redirect" = "301" ] || { echo "esperaba 301 en HTTP, obtuve $redirect"; docker logs gateway-ci; exit 1; }
+          echo "gateway ok (HTTPS 200, HTTP $redirect)"
