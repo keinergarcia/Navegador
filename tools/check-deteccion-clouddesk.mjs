@@ -25,6 +25,44 @@ const ARCHIVO_USERHTML = path.join(ART, "apps-script-userhtml.html");
 // --------------------------------------------------------------------------- #
 // Carga del userHtml del despliegue
 // --------------------------------------------------------------------------- #
+// Convierte un literal de cadena JavaScript a texto JSON. Apps Script puede
+// incrustar el JSON con escapes \xNN / \' (válidos en JS, no en JSON). Solo se
+// usa como respaldo cuando JSON.parse directo falla.
+function decodificarJsString(raw) {
+  let out = "";
+  for (let i = 0; i < raw.length; i++) {
+    const c = raw[i];
+    if (c !== "\\") { out += c; continue; }
+    const n = raw[i + 1];
+    if (n === undefined) { out += "\\"; continue; }
+    switch (n) {
+      case '"': out += '"'; i++; break;
+      case "'": out += "'"; i++; break;
+      case "\\": out += "\\"; i++; break;
+      case "/": out += "/"; i++; break;
+      case "b": out += "\b"; i++; break;
+      case "f": out += "\f"; i++; break;
+      case "n": out += "\n"; i++; break;
+      case "r": out += "\r"; i++; break;
+      case "t": out += "\t"; i++; break;
+      case "x": {
+        const code = Number.parseInt(raw.slice(i + 2, i + 4), 16);
+        out += Number.isFinite(code) ? String.fromCharCode(code) : "";
+        i += 3;
+        break;
+      }
+      case "u": {
+        const code = Number.parseInt(raw.slice(i + 2, i + 6), 16);
+        out += Number.isFinite(code) ? String.fromCharCode(code) : "";
+        i += 5;
+        break;
+      }
+      default: out += n; i++; break;
+    }
+  }
+  return out;
+}
+
 function decodificarUserHtml(html) {
   // goog.script.init("<JSON escapado como literal JS>") — escáner de string.
   const marca = 'goog.script.init("';
@@ -39,8 +77,18 @@ function decodificarUserHtml(html) {
     if (c === '"') break;
     interior += c;
   }
-  const decodificado = JSON.parse(interior); // interpreta \xNN, \", \/
-  return JSON.parse(decodificado).userHtml || "";
+  let valor;
+  try {
+    valor = JSON.parse(interior);
+  } catch {
+    valor = JSON.parse(decodificarJsString(interior));
+  }
+  // El argumento de init puede venir doblemente codificado (string JSON) o
+  // directamente como objeto: se normalizan ambos casos.
+  if (typeof valor === "string") valor = JSON.parse(valor);
+  return (valor && typeof valor === "object" && typeof valor.userHtml === "string")
+    ? valor.userHtml
+    : "";
 }
 
 async function cargarUserHtml() {
@@ -187,4 +235,4 @@ const resumen = {
   conBloqueoPorDispositivo: CASOS.filter((c) => c.esperado).length,
 };
 console.log("\n" + JSON.stringify(resumen));
-process.exit(fallos === 0 ? 0 : 1);
+process.exitCode = fallos === 0 ? 0 : 1;
