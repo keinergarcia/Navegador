@@ -66,7 +66,7 @@ jobs:
 
       - name: Estado del escritorio
         run: |
-          docker exec desk-e2e python3 - <<'PY'
+          docker exec -i desk-e2e python3 - <<'PY'
           import json, os, urllib.request
           req = urllib.request.Request(
               "http://127.0.0.1:8099/status",
