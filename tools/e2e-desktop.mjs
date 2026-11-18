@@ -26,7 +26,7 @@
 //
 // Códigos de salida: 0 verificado · 1 fallo · 2 pendiente (app no cargada/login)
 import { spawn } from "node:child_process";
-import { access, mkdir, writeFile } from "node:fs/promises";
+import { access, mkdir, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import process from "node:process";
 
@@ -333,7 +333,10 @@ async function selftest(args) {
   }
 
   const port = Number(process.env.CDP_PORT || 9444);
-  const profile = path.resolve(args.out, "e2e-selftest-profile");
+  const outDir = path.resolve(args.out);
+  await mkdir(outDir, { recursive: true });
+  const profile = path.join(outDir, "e2e-selftest-profile");
+  await rm(profile, { recursive: true, force: true });
   const fixture = path
     .resolve(import.meta.dirname, "..", "tests", "fixtures", "e2e-app.html")
     .replace(/\\/g, "/");
@@ -347,14 +350,32 @@ async function selftest(args) {
       "--no-first-run",
       "--no-default-browser-check",
       "--disable-gpu",
+      // Ubuntu 24.04 restringe los namespaces de usuario (AppArmor) y el
+      // Chrome de CI no tiene perfil: sin esto no arranca ni abre CDP.
+      "--no-sandbox",
+      "--disable-dev-shm-usage",
       "--allow-file-access-from-files",
       "about:blank",
     ],
-    { stdio: "ignore" },
+    { stdio: ["ignore", "pipe", "pipe"] },
   );
 
+  let chromeLog = "";
+  chrome.stdout?.on("data", (chunk) => {
+    chromeLog += chunk.toString();
+  });
+  chrome.stderr?.on("data", (chunk) => {
+    chromeLog += chunk.toString();
+  });
+
   try {
-    await waitCdp(`http://127.0.0.1:${port}`, 20_000);
+    try {
+      await waitCdp(`http://127.0.0.1:${port}`, 25_000);
+    } catch (error) {
+      throw new Error(
+        `${error.message}\nChrome (${chromePath}) no abrió CDP.\nSalida:\n${chromeLog.slice(-800) || "<vacía>"}`,
+      );
+    }
 
     const run = async (blocked) => {
       const url = `file:///${fixture.replace(/^\//, "")}?blocked=${blocked ? 1 : 0}`;

@@ -96,6 +96,7 @@ jobs:
         uses: browser-actions/setup-chrome@v1
         with:
           chrome-version: stable
+          install-chrome-dependencies: true
 
       - name: Autoprueba de la E2E (fixture, sin servidor)
         env:
