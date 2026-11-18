@@ -250,7 +250,9 @@ async function inspect(cdp, { strictEnv, outDir, label }) {
     const fallos = [];
     if (env.touch !== 0) fallos.push(`maxTouchPoints=${env.touch}`);
     if (env.coarse) fallos.push("(pointer: coarse)");
-    if (!env.finePointer) fallos.push("sin (any-pointer: fine)");
+    // Nota: (any-pointer: fine) puede ser false en X11 virtualizado sin
+    // dispositivo físico; la app decide por (pointer: coarse) && !fine, y
+    // coarse es false, así que no se bloquea. No se exige finePointer.
     if (env.uaMobile === true) fallos.push("userAgentData.mobile=true");
     if (env.sw < 1024 || env.sh < 600) fallos.push(`pantalla ${env.sw}x${env.sh}`);
     if (fallos.length) {
