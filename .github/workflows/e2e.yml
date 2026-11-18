@@ -52,17 +52,25 @@ jobs:
             -e IDLE_STOP_MINUTES=0 \
             -e CLOUDDESK_E2E_DEBUG=1 \
             clouddesk/desktop:e2e
-          echo "esperando a KasmVNC y CDP..."
+          echo "esperando a Chromium (CDP)..."
+          ready=0
           for _ in $(seq 1 120); do
-            if curl -fsS -o /dev/null http://127.0.0.1:8444/ \
-               && curl -fsS -o /dev/null http://127.0.0.1:9222/json/version; then
-              echo "listo"
-              exit 0
+            if curl -fsS -o /dev/null --max-time 3 http://127.0.0.1:9222/json/version; then
+              ready=1
+              break
             fi
             sleep 3
           done
-          docker logs --tail=120 desk-e2e
-          exit 1
+          # KasmVNC responde 401 sin credenciales: eso confirma que escucha.
+          code="$(curl -s -o /dev/null -w '%{http_code}' --max-time 3 http://127.0.0.1:8444/ || true)"
+          echo "KasmVNC HTTP: $code"
+          if [ "$ready" != "1" ]; then
+            echo "Chromium no expuso CDP"
+            docker logs --tail=150 desk-e2e || true
+            docker exec desk-e2e sh -c 'ls -la /home/desk/.vnc; cat /home/desk/.vnc/*.log 2>/dev/null | tail -100' || true
+            exit 1
+          fi
+          echo "Chromium listo (CDP 9222)"
 
       - name: Estado del escritorio
         run: |
