@@ -144,7 +144,7 @@ jobs:
       - uses: docker/setup-buildx-action@v3
 
       - name: Build API
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: api
           file: api/Dockerfile
@@ -155,7 +155,7 @@ jobs:
           cache-to: type=gha,mode=max,scope=api-${{ matrix.arch }}
 
       - name: Build gateway
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: gateway
           file: gateway/Dockerfile
@@ -182,7 +182,7 @@ jobs:
             '
 
       - name: Build escritorio (XFCE + Chromium + KasmVNC)
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: desktop
           file: desktop/Dockerfile
