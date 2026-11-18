@@ -463,11 +463,28 @@ async function main() {
     await sleep(2500); // deja que el iframe del userHtml se monte
 
     const version = await fetchJson(`${base}/json/version`);
-    const findings = await inspect(cdp, {
+    const labelBase = new Date().toISOString().replace(/[:.]/g, "-");
+    let findings = await inspect(cdp, {
       strictEnv: true,
       outDir: path.resolve(args.out),
-      label: new Date().toISOString().replace(/[:.]/g, "-"),
+      label: labelBase,
     });
+    // El userHtml vive en un iframe sandbox que se monta tras la carga del
+    // contenedor; reintenta hasta que esMovil() aparezca en algún contexto.
+    const intentos = Math.floor(Math.min(args.timeout, 30_000) / 2500);
+    for (let t = 1; t <= intentos && findings.esMovil.length === 0; t++) {
+      await sleep(2500);
+      const otra = await inspect(cdp, {
+        strictEnv: true,
+        outDir: path.resolve(args.out),
+        label: `${labelBase}-${t}`,
+      });
+      findings.esMovil = otra.esMovil;
+      findings.alertas = otra.alertas;
+      findings.contexto = otra.contexto;
+      findings.env = otra.env;
+      if (otra.captura) findings.captura = otra.captura;
+    }
     const result = verdict(findings);
 
     console.log(
