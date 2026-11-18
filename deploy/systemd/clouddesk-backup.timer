@@ -1,0 +1,11 @@
+[Unit]
+Description=CloudDesk - copia de seguridad semanal
+
+[Timer]
+OnCalendar=Sun *-*-* 04:30:00
+RandomizedDelaySec=1800
+Persistent=true
+Unit=clouddesk-backup.service
+
+[Install]
+WantedBy=timers.target

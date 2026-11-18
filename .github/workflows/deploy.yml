@@ -1,0 +1,117 @@
+name: Deploy
+
+on:
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: "Rama, tag o commit a desplegar"
+        default: main
+        required: true
+      smoke:
+        description: "Ejecutar prueba de humo al terminar"
+        type: boolean
+        default: true
+  push:
+    branches: [main]
+    tags: ["v*"]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy-production
+  cancel-in-progress: false
+
+jobs:
+  # Decide si hay servidor configurado y si este evento debe desplegar.
+  preflight:
+    name: Comprobar configuración
+    runs-on: ubuntu-latest
+    outputs:
+      ready: ${{ steps.check.outputs.ready }}
+      ref: ${{ steps.check.outputs.ref }}
+    steps:
+      - id: check
+        env:
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+          AUTO_DEPLOY: ${{ vars.AUTO_DEPLOY }}
+          EVENT: ${{ github.event_name }}
+          GIT_REF: ${{ github.ref }}
+          INPUT_REF: ${{ inputs.ref }}
+        run: |
+          set -euo pipefail
+          ready=false
+          if [ -n "${DEPLOY_HOST:-}" ] && [ -n "${DEPLOY_SSH_KEY:-}" ]; then
+            if [ "$EVENT" = "workflow_dispatch" ]; then
+              ready=true
+            elif [ "${GIT_REF#refs/tags/v}" != "$GIT_REF" ]; then
+              ready=true
+            elif [ "$GIT_REF" = "refs/heads/main" ] && [ "${AUTO_DEPLOY:-}" = "true" ]; then
+              ready=true
+            fi
+          fi
+          echo "ready=$ready" >> "$GITHUB_OUTPUT"
+          echo "ref=${INPUT_REF:-$GIT_REF}" >> "$GITHUB_OUTPUT"
+          if [ "$ready" = "false" ]; then
+            echo "::notice::Despliegue omitido: faltan DEPLOY_HOST/DEPLOY_SSH_KEY o AUTO_DEPLOY no está activo."
+          fi
+
+  deploy:
+    name: Desplegar por SSH
+    needs: preflight
+    if: needs.preflight.outputs.ready == 'true'
+    runs-on: ubuntu-latest
+    environment: production
+    timeout-minutes: 45
+    steps:
+      - name: Preparar SSH
+        env:
+          SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "$SSH_KEY" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          printf '%s\n' "$KNOWN_HOSTS" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/known_hosts
+          if [ ! -s ~/.ssh/known_hosts ]; then
+            echo "::error::Falta el secret DEPLOY_KNOWN_HOSTS (salida de ssh-keyscan)."
+            exit 1
+          fi
+
+      - name: Actualizar el servidor
+        env:
+          HOST: ${{ secrets.DEPLOY_HOST }}
+          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+          DEPLOY_PATH: ${{ vars.DEPLOY_PATH }}
+          REF: ${{ needs.preflight.outputs.ref }}
+        run: |
+          set -euo pipefail
+          target="${DEPLOY_USER:-ubuntu}@${HOST}"
+          dir="${DEPLOY_PATH:-/opt/clouddesk}"
+          ssh -i ~/.ssh/id_ed25519 \
+              -o StrictHostKeyChecking=yes \
+              -o ConnectTimeout=15 \
+              "$target" \
+              "set -euo pipefail; cd '$dir'; git fetch --prune --tags origin; git checkout --force '$REF'; CLOUDDESK_SKIP_PULL=1 ./scripts/update.sh --no-smoke"
+
+      - name: Prueba de humo
+        env:
+          HOST: ${{ secrets.DEPLOY_HOST }}
+          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+          DEPLOY_PATH: ${{ vars.DEPLOY_PATH }}
+          CLOUDDESK_PASSWORD: ${{ secrets.CLOUDDESK_PASSWORD }}
+        run: |
+          set -euo pipefail
+          target="${DEPLOY_USER:-ubuntu}@${HOST}"
+          dir="${DEPLOY_PATH:-/opt/clouddesk}"
+          if [ -n "${CLOUDDESK_PASSWORD:-}" ]; then
+            printf '%s\n' "$CLOUDDESK_PASSWORD" | ssh -i ~/.ssh/id_ed25519 \
+              -o StrictHostKeyChecking=yes "$target" \
+              "cd '$dir' && ./scripts/smoke-test.sh --password-stdin"
+          else
+            ssh -i ~/.ssh/id_ed25519 -o StrictHostKeyChecking=yes "$target" \
+              "cd '$dir' && ./scripts/smoke-test.sh"
+          fi

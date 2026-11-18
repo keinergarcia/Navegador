@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<title>Fixture E2E (no es la app real)</title>
+<style>
+  body { font-family: system-ui, sans-serif; margin: 24px; }
+  iframe { border: 1px solid #999; }
+</style>
+</head>
+<body>
+<p id="estado">Acceso permitido</p>
+<iframe id="marco" width="360" height="80" title="iframe de prueba"></iframe>
+<script>
+  // Función equivalente a la del despliegue: si el entorno es móvil, bloquea.
+  window.esMovil = (d) => Boolean(d && (d.uaMobile || d.touch > 0 || d.coarse || d.sw < 900));
+
+  const blocked = new URLSearchParams(location.search).get("blocked") === "1";
+  document.getElementById("estado").textContent = blocked ? "Solo desde PC" : "Acceso permitido";
+
+  // Simula el iframe del userHtml de Apps Script: el texto vive en otro
+  // contexto, de modo que la autoprueba valida el recorrido de contextos.
+  const doc = document.getElementById("marco").contentDocument;
+  doc.open();
+  doc.write(`<p>${blocked ? "Solo desde PC" : "Panel cargado"}</p>`);
+  doc.close();
+</script>
+</body>
+</html>

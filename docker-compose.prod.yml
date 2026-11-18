@@ -1,0 +1,17 @@
+# =============================================================================
+# CloudDesk - despliegue con imágenes publicadas en GHCR.
+#
+# Uso:
+#   CLOUDDESK_VERSION=1.0.0 docker compose -f docker-compose.yml \
+#     -f docker-compose.prod.yml up -d --no-build --pull always
+#
+# Requiere imágenes publicadas por .github/workflows/release.yml. Si el paquete
+# es privado, autentícate antes: echo "$GITHUB_TOKEN" | docker login ghcr.io -u USER --password-stdin
+# =============================================================================
+services:
+  desktop:
+    image: ghcr.io/keinergarcia/clouddesk-desktop:${CLOUDDESK_VERSION:-latest}
+  api:
+    image: ghcr.io/keinergarcia/clouddesk-api:${CLOUDDESK_VERSION:-latest}
+  edge:
+    image: ghcr.io/keinergarcia/clouddesk-gateway:${CLOUDDESK_VERSION:-latest}

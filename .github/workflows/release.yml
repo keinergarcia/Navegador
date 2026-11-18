@@ -1,0 +1,203 @@
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Versión a publicar (ej. 1.0.0)"
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  packages: write
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  meta:
+    name: Versión
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.set.outputs.version }}
+    steps:
+      - id: set
+        env:
+          INPUT_VERSION: ${{ inputs.version }}
+          REF_NAME: ${{ github.ref_name }}
+        run: |
+          if [ -n "${INPUT_VERSION:-}" ]; then
+            version="${INPUT_VERSION#v}"
+          else
+            version="${REF_NAME#v}"
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "publicando versión $version"
+
+  # ---------------------------------------------------------------------------
+  # Build nativo por arquitectura y push por digest (sin QEMU).
+  # ---------------------------------------------------------------------------
+  build:
+    name: ${{ matrix.image }} · ${{ matrix.arch }}
+    needs: meta
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - image: api
+            context: api
+            arch: amd64
+            runner: ubuntu-latest
+            platform: linux/amd64
+          - image: api
+            context: api
+            arch: arm64
+            runner: ubuntu-24.04-arm
+            platform: linux/arm64
+          - image: gateway
+            context: gateway
+            arch: amd64
+            runner: ubuntu-latest
+            platform: linux/amd64
+          - image: gateway
+            context: gateway
+            arch: arm64
+            runner: ubuntu-24.04-arm
+            platform: linux/arm64
+          - image: desktop
+            context: desktop
+            arch: amd64
+            runner: ubuntu-latest
+            platform: linux/amd64
+          - image: desktop
+            context: desktop
+            arch: arm64
+            runner: ubuntu-24.04-arm
+            platform: linux/arm64
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - id: build
+        uses: docker/build-push-action@v6
+        with:
+          context: ${{ matrix.context }}
+          platforms: ${{ matrix.platform }}
+          push: true
+          labels: |
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+            org.opencontainers.image.version=${{ needs.meta.outputs.version }}
+          outputs: type=image,name=ghcr.io/${{ github.repository_owner }}/clouddesk-${{ matrix.image }},push-by-digest=true,name-canonical=true,push=true
+          cache-from: type=gha,scope=${{ matrix.image }}-${{ matrix.arch }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.image }}-${{ matrix.arch }}
+
+      - name: Guardar digest
+        run: |
+          mkdir -p /tmp/digests
+          digest="${{ steps.build.outputs.digest }}"
+          touch "/tmp/digests/${digest#sha256:}"
+          echo "digest=$digest" >> "$GITHUB_ENV"
+          echo "image=${{ matrix.image }}" >> "$GITHUB_ENV"
+          echo "arch=${{ matrix.arch }}" >> "$GITHUB_ENV"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: digest-${{ matrix.image }}-${{ matrix.arch }}
+          path: /tmp/digests/*
+          if-no-files-found: error
+          retention-days: 1
+
+  # ---------------------------------------------------------------------------
+  # Manifiestos multi-arquitectura: :versión, :latest y :sha
+  # ---------------------------------------------------------------------------
+  manifest:
+    name: Manifiestos GHCR
+    needs: [meta, build]
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: actions/download-artifact@v4
+        with:
+          path: /tmp/digests
+          pattern: digest-*
+          merge-multiple: true
+
+      - name: Crear manifiestos
+        env:
+          VERSION: ${{ needs.meta.outputs.version }}
+          SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          short="$(echo "$SHA" | cut -c1-7)"
+          for image in api gateway desktop; do
+            ref="ghcr.io/${{ github.repository_owner }}/clouddesk-${image}"
+            digests=()
+            for file in /tmp/digests/*; do
+              digests+=("${ref}@sha256:$(basename "$file")")
+            done
+            echo "→ $ref (${#digests[@]} arquitecturas)"
+            docker buildx imagetools create \
+              -t "${ref}:${VERSION}" \
+              -t "${ref}:latest" \
+              -t "${ref}:sha-${short}" \
+              "${digests[@]}"
+            docker buildx imagetools inspect "${ref}:${VERSION}"
+          done
+
+  # ---------------------------------------------------------------------------
+  # Paquete de despliegue + GitHub Release
+  # ---------------------------------------------------------------------------
+  bundle:
+    name: Paquete
+    needs: [meta]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Generar tar.gz reproducible
+        run: ./scripts/make-release.sh "${{ needs.meta.outputs.version }}" dist
+      - uses: actions/upload-artifact@v4
+        with:
+          name: clouddesk-bundle
+          path: dist/*
+          if-no-files-found: error
+
+  release-notes:
+    name: Release en GitHub
+    needs: [meta, manifest, bundle]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: clouddesk-bundle
+          path: dist
+      - uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ needs.meta.outputs.version }}
+          name: CloudDesk v${{ needs.meta.outputs.version }}
+          generate_release_notes: true
+          files: dist/*
+          fail_on_unmatched_files: true

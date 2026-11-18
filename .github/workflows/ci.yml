@@ -1,0 +1,230 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  NODE_VERSION: "24"
+
+jobs:
+  # ---------------------------------------------------------------------------
+  # 1. Auditoría estática: scripts, YAML, tests del API y reglas del repo.
+  # ---------------------------------------------------------------------------
+  audit:
+    name: Auditoría y pruebas
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Dependencias del sistema
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq shellcheck python3-yaml
+
+      - name: Sintaxis (bash, Python, JS)
+        run: |
+          set -euo pipefail
+          for f in scripts/*.sh; do bash -n "$f"; done
+          python3 -m py_compile desktop/rootfs/opt/clouddesk/*.py
+          for f in api/src/*.js api/tools/*.mjs tools/*.mjs gateway/web/assets/*.js; do
+            node --check "$f"
+          done
+
+      - name: ShellCheck
+        run: shellcheck -S warning scripts/*.sh
+
+      - name: YAML válido
+        run: |
+          python3 - <<'PY'
+          import glob, sys, yaml
+          files = glob.glob(".github/workflows/*.yml") + [
+              "docker-compose.yml", "docker-compose.e2e.yml", "docker-compose.prod.yml",
+              ".github/dependabot.yml",
+          ]
+          for f in files:
+              with open(f, encoding="utf-8") as fh:
+                  list(yaml.safe_load_all(fh))
+              print(f"ok {f}")
+          PY
+
+      - name: Validar docker-compose
+        run: |
+          set -euo pipefail
+          HASH="$(printf '%s' 'ci-password-1234' | node api/src/cli.js hash-password)"
+          cat > .env.ci <<'EOF'
+          BASE_DOMAIN=example.com
+          PANEL_HOST=desk.example.com
+          VNC_HOST=vnc.example.com
+          COOKIE_DOMAIN=.example.com
+          ACME_EMAIL=ci@example.com
+          SESSION_SECRET=0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
+          AGENT_TOKEN=0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
+          VNC_AUTH_B64=ZGVzazpjaS1wYXNzd29yZC0xMjM0
+          EOF
+          printf "AUTH_PASSWORD_HASH='%s'\n" "$HASH" >> .env.ci
+          printf "VNC_PASSWORD='%s'\n" 'ci-password-1234' >> .env.ci
+          docker compose --env-file .env.ci config -q
+          docker compose --env-file .env.ci -f docker-compose.yml -f docker-compose.e2e.yml config -q
+          docker compose --env-file .env.ci -f docker-compose.yml -f docker-compose.prod.yml config -q
+          rm -f .env.ci
+
+      - name: Pruebas del API
+        working-directory: api
+        run: npm test
+
+      - name: Auditoría del repositorio
+        run: node tools/repo-audit.mjs
+
+      - name: Preparar Chrome
+        id: chrome
+        uses: browser-actions/setup-chrome@v1
+        with:
+          chrome-version: stable
+
+      - name: Autoprueba de la E2E (fixture, sin servidor)
+        env:
+          CHROME: ${{ steps.chrome.outputs.chrome-path }}
+        run: node tools/e2e-desktop.mjs --selftest
+
+  # ---------------------------------------------------------------------------
+  # 2. Detección de la app (opcional: requiere red hacia script.google.com).
+  #    Actívala con la variable de repositorio RUN_DETECTION_CHECK=true.
+  # ---------------------------------------------------------------------------
+  deteccion:
+    name: Detección Apps Script
+    if: vars.RUN_DETECTION_CHECK == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+      - name: Ejecutar verificación de esMovil()
+        run: node tools/check-deteccion-clouddesk.mjs
+
+  # ---------------------------------------------------------------------------
+  # 3. Build nativo por arquitectura (sin QEMU): amd64 y arm64.
+  # ---------------------------------------------------------------------------
+  build:
+    name: Build ${{ matrix.arch }}
+    needs: audit
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: amd64
+            runner: ubuntu-latest
+            platform: linux/amd64
+          - arch: arm64
+            runner: ubuntu-24.04-arm
+            platform: linux/arm64
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Build API
+        uses: docker/build-push-action@v6
+        with:
+          context: api
+          file: api/Dockerfile
+          platforms: ${{ matrix.platform }}
+          load: true
+          tags: clouddesk/api:ci
+          cache-from: type=gha,scope=api-${{ matrix.arch }}
+          cache-to: type=gha,mode=max,scope=api-${{ matrix.arch }}
+
+      - name: Build gateway
+        uses: docker/build-push-action@v6
+        with:
+          context: gateway
+          file: gateway/Dockerfile
+          platforms: ${{ matrix.platform }}
+          load: true
+          tags: clouddesk/gateway:ci
+          cache-from: type=gha,scope=gateway-${{ matrix.arch }}
+          cache-to: type=gha,mode=max,scope=gateway-${{ matrix.arch }}
+
+      - name: Validar plantilla nginx (certificado de prueba)
+        run: |
+          docker run --rm \
+            -e PANEL_HOST=desk.example.com \
+            -e VNC_HOST=vnc.example.com \
+            -e VNC_AUTH_B64=ZGVzazpjaS1wYXNzd29yZC0xMjM0 \
+            clouddesk/gateway:ci sh -c '
+              set -e
+              apk add --no-cache openssl >/dev/null
+              d=/etc/letsencrypt/live/desk.example.com
+              mkdir -p "$d"
+              openssl req -x509 -newkey rsa:2048 -nodes -days 1 -subj "/CN=desk.example.com" \
+                -keyout "$d/privkey.pem" -out "$d/fullchain.pem" 2>/dev/null
+              nginx -t
+            '
+
+      - name: Build escritorio (XFCE + Chromium + KasmVNC)
+        uses: docker/build-push-action@v6
+        with:
+          context: desktop
+          file: desktop/Dockerfile
+          platforms: ${{ matrix.platform }}
+          load: true
+          tags: clouddesk/desktop:ci
+          cache-from: type=gha,scope=desktop-${{ matrix.arch }}
+          cache-to: type=gha,mode=max,scope=desktop-${{ matrix.arch }}
+
+      - name: Verificar la imagen del escritorio
+        run: |
+          set -euo pipefail
+          arch="$(docker run --rm --entrypoint dpkg clouddesk/desktop:ci --print-architecture)"
+          echo "arquitectura de la imagen: $arch"
+          if [ "${{ matrix.arch }}" = "amd64" ]; then
+            [ "$arch" = "amd64" ]
+          else
+            [ "$arch" = "arm64" ]
+          fi
+          docker run --rm --entrypoint /usr/bin/chromium clouddesk/desktop:ci --version
+          docker run --rm --entrypoint python3 clouddesk/desktop:ci -c "
+          import os
+          assert os.path.exists('/usr/bin/kasmvncserver'), 'falta kasmvncserver'
+          assert os.path.exists('/opt/clouddesk/entrypoint.sh'), 'falta entrypoint'
+          assert os.path.exists('/usr/share/kasmvnc/www'), 'falta el cliente web de KasmVNC'
+          print('escritorio: binarios presentes')
+          "
+
+      - name: Prueba de arranque del gateway
+        run: |
+          set -euo pipefail
+          docker run -d --name gateway-ci -p 8088:80 \
+            -e PANEL_HOST=desk.example.com \
+            -e VNC_HOST=vnc.example.com \
+            -e VNC_AUTH_B64=ZGVzazpjaS1wYXNzd29yZC0xMjM0 \
+            -e BASE_DOMAIN=example.com \
+            -e ACME_EMAIL=ci@example.com \
+            clouddesk/gateway:ci
+          trap 'docker rm -f gateway-ci >/dev/null 2>&1 || true' EXIT
+          for _ in $(seq 1 20); do
+            if curl -fsS -o /dev/null http://127.0.0.1:8088/healthz; then break; fi
+            sleep 1
+          done
+          code="$(curl -s -o /dev/null -w '%{http_code}' -H 'Host: desk.example.com' http://127.0.0.1:8088/healthz)"
+          [ "$code" = "200" ] || { docker logs gateway-ci; exit 1; }
+          echo "gateway ok (HTTP $code)"

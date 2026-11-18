@@ -1,0 +1,235 @@
+# =============================================================================
+# CloudDesk - proxy inverso
+# Plantilla: el entrypoint oficial de nginx sustituye ${PANEL_HOST},
+# ${VNC_HOST} y ${VNC_AUTH_B64} y escribe el resultado en conf.d/.
+# =============================================================================
+
+resolver 127.0.0.11 valid=10s ipv6=off;
+set $api_upstream http://api:8080;
+set $desktop_upstream http://desktop:8444;
+
+# -----------------------------------------------------------------------------
+# HTTP (puerto 80): solo ACME + redirección a HTTPS
+# -----------------------------------------------------------------------------
+server {
+    listen 80 default_server;
+    listen [::]:80 default_server;
+    server_name _;
+
+    # Necesario para Let's Encrypt (webroot). No revela nada más.
+    location ^~ /.well-known/acme-challenge/ {
+        root /var/www/certbot;
+        default_type text/plain;
+        access_log off;
+    }
+
+    location / {
+        return 301 https://$host$request_uri;
+    }
+}
+
+# -----------------------------------------------------------------------------
+# HTTPS: host no reconocido -> cerrar el handshake TLS
+# -----------------------------------------------------------------------------
+server {
+    listen 443 ssl default_server;
+    listen [::]:443 ssl default_server;
+    ssl_reject_handshake on;
+}
+
+# -----------------------------------------------------------------------------
+# PANEL DE CONTROL
+# -----------------------------------------------------------------------------
+server {
+    listen 443 ssl;
+    http2 on;
+    server_name ${PANEL_HOST};
+
+    ssl_certificate     /etc/letsencrypt/live/${PANEL_HOST}/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/${PANEL_HOST}/privkey.pem;
+    ssl_protocols TLSv1.2 TLSv1.3;
+    ssl_ciphers ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256:ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384:ECDHE-ECDSA-CHACHA20-POLY1305:ECDHE-RSA-CHACHA20-POLY1305:DHE-RSA-AES128-GCM-SHA256:DHE-RSA-AES256-GCM-SHA384;
+    ssl_prefer_server_ciphers off;
+    ssl_session_cache shared:SSL:10m;
+    ssl_session_timeout 1d;
+    ssl_session_tickets off;
+
+    add_header Strict-Transport-Security "max-age=31536000" always;
+    add_header X-Content-Type-Options "nosniff" always;
+    add_header Referrer-Policy "same-origin" always;
+    add_header X-Frame-Options "DENY" always;
+    add_header Permissions-Policy "camera=(), microphone=(), geolocation=()" always;
+    add_header Content-Security-Policy "default-src 'self'; img-src 'self' data:; style-src 'self'; script-src 'self'; connect-src 'self'; frame-src https://${VNC_HOST}; form-action 'self'; base-uri 'none'; object-src 'none'; frame-ancestors 'none'" always;
+
+    root /usr/share/nginx/html;
+    index index.html;
+    client_max_body_size 16k;
+
+    location = /healthz {
+        access_log off;
+        default_type text/plain;
+        return 200 "ok\n";
+    }
+
+    # --- API -----------------------------------------------------------------
+    location = /api/auth/login {
+        limit_req zone=login burst=5 nodelay;
+        proxy_pass $api_upstream;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $remote_addr;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_read_timeout 30s;
+    }
+
+    location /api/ {
+        limit_req zone=api burst=40 nodelay;
+        proxy_pass $api_upstream;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $remote_addr;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header Connection "";
+        # Reiniciar/cambiar resolución puede tardar (stop + start de la sesión).
+        proxy_read_timeout 75s;
+        proxy_send_timeout 75s;
+        proxy_buffering off;
+    }
+
+    # --- autenticación de subpeticiones (auth_request) -----------------------
+    location = /_auth {
+        internal;
+        proxy_pass $api_upstream/api/auth/verify;
+        proxy_pass_request_body off;
+        proxy_set_header Content-Length "";
+        proxy_set_header Cookie $http_cookie;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $remote_addr;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+
+    # --- visor inmersivo (requiere sesión) -----------------------------------
+    location = /desktop.html {
+        auth_request /_auth;
+        error_page 401 = @panel_login;
+    }
+
+    location @panel_login {
+        return 302 /;
+    }
+
+    # --- estáticos -----------------------------------------------------------
+    location = / {
+        try_files /index.html =404;
+    }
+
+    location /assets/ {
+        try_files $uri =404;
+        expires 1h;
+        access_log off;
+    }
+
+    location = /manifest.webmanifest {
+        types { } default_type application/manifest+json;
+    }
+
+    location ~* \.(?:css|js|svg|png|webmanifest|ico)$ {
+        try_files $uri =404;
+        expires 1h;
+        access_log off;
+    }
+
+    location / {
+        try_files $uri $uri/ =404;
+    }
+
+    location ~ /\.(?!well-known) {
+        deny all;
+    }
+
+    location = /robots.txt {
+        default_type text/plain;
+        return 200 "User-agent: *\nDisallow: /\n";
+    }
+}
+
+# -----------------------------------------------------------------------------
+# ESCRITORIO REMOTO (KasmVNC)
+# Sin X-Frame-Options: se usa frame-ancestors para permitir el iframe del panel.
+# La autenticación se valida en nginx; KasmVNC recibe la cabecera Basic ya
+# resuelta, de modo que Safari nunca tiene que enviar Basic Auth en el WS.
+# -----------------------------------------------------------------------------
+server {
+    listen 443 ssl;
+    http2 on;
+    server_name ${VNC_HOST};
+
+    ssl_certificate     /etc/letsencrypt/live/${PANEL_HOST}/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/${PANEL_HOST}/privkey.pem;
+    ssl_protocols TLSv1.2 TLSv1.3;
+    ssl_ciphers ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256:ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384:ECDHE-ECDSA-CHACHA20-POLY1305:ECDHE-RSA-CHACHA20-POLY1305:DHE-RSA-AES128-GCM-SHA256:DHE-RSA-AES256-GCM-SHA384;
+    ssl_prefer_server_ciphers off;
+    ssl_session_cache shared:SSL:10m;
+    ssl_session_timeout 1d;
+    ssl_session_tickets off;
+
+    add_header Strict-Transport-Security "max-age=31536000" always;
+    add_header X-Content-Type-Options "nosniff" always;
+    add_header Referrer-Policy "same-origin" always;
+    add_header Content-Security-Policy "frame-ancestors https://${PANEL_HOST}" always;
+
+    root /usr/share/nginx/html;
+    client_max_body_size 16m;
+
+    auth_request /_auth;
+    error_page 401 = @vnc_login;
+    error_page 502 503 504 = @vnc_offline;
+
+    set $auth_api http://api:8080;
+
+    location = /_auth {
+        internal;
+        proxy_pass $auth_api/api/auth/verify;
+        proxy_pass_request_body off;
+        proxy_set_header Content-Length "";
+        proxy_set_header Cookie $http_cookie;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $remote_addr;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+
+    location @vnc_login {
+        return 302 https://${PANEL_HOST}/;
+    }
+
+    location @vnc_offline {
+        default_type text/html;
+        return 503 '<!doctype html><html lang="es"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Escritorio no disponible</title><style>body{background:#070b14;color:#e2e8f0;font-family:-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif;display:grid;place-items:center;min-height:100vh;margin:0;text-align:center;padding:24px}a{color:#5eead4}</style><div><h1>El escritorio no responde</h1><p>La sesión está iniciando o detenida.</p><p><a href="https://${PANEL_HOST}/">Volver al panel para arrancarla</a></p></div></html>';
+    }
+
+    location / {
+        proxy_pass $desktop_upstream;
+        proxy_http_version 1.1;
+
+        # WebSocket
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection $connection_upgrade;
+
+        proxy_set_header Host $host;
+        # Credenciales resueltas en el proxy: el navegador no las conoce.
+        proxy_set_header Authorization "Basic ${VNC_AUTH_B64}";
+        # KasmVNC usa X-Forwarded-For para su lista negra: se sobrescribe
+        # (nunca usar $proxy_add_x_forwarded_for en este salto).
+        proxy_set_header X-Forwarded-For $remote_addr;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-Proto $scheme;
+
+        proxy_buffering off;
+        proxy_request_buffering off;
+        proxy_read_timeout 3600s;
+        proxy_send_timeout 3600s;
+        proxy_connect_timeout 15s;
+    }
+}

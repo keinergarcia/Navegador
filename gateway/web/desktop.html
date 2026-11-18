@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1">
+  <meta name="theme-color" content="#000000">
+  <meta name="color-scheme" content="dark">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <link rel="icon" href="/assets/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/assets/styles.css">
+  <title>Escritorio · CloudDesk</title>
+</head>
+<body class="desktop-body">
+  <div class="viewer">
+    <header class="dtoolbar">
+      <a class="icon-btn" href="/" aria-label="Volver al panel" title="Volver al panel">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 5l-7 7 7 7"/></svg>
+      </a>
+      <span class="dstatus" id="dstatus" data-state="waiting">
+        <span class="dot" aria-hidden="true"></span>
+        <span id="dstatus-text">Conectando</span>
+      </span>
+      <span class="title" id="dtitle">Escritorio</span>
+      <button class="icon-btn" type="button" id="restart" aria-label="Reiniciar sesión" title="Reiniciar sesión">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 12a8 8 0 1 1-2.3-5.6M20 4v5h-5"/></svg>
+      </button>
+      <a class="icon-btn" id="direct" href="#" target="_blank" rel="noopener" aria-label="Abrir en una pestaña nueva" title="Abrir en una pestaña nueva">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M14 4h6v6M20 4l-8 8M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5"/></svg>
+      </a>
+      <button class="icon-btn" type="button" id="fullscreen" aria-label="Pantalla completa" title="Pantalla completa">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/></svg>
+      </button>
+    </header>
+
+    <iframe
+      id="vnc"
+      class="vnc-frame"
+      title="Escritorio Linux remoto"
+      allow="clipboard-read; clipboard-write; fullscreen; autoplay"
+      referrerpolicy="no-referrer"
+      src="about:blank"></iframe>
+
+    <div class="viewer-note" id="note" hidden>
+      <p id="note-text">Cargando el escritorio…</p>
+      <p><a id="note-link" href="/">Volver al panel</a></p>
+    </div>
+  </div>
+
+  <script src="/assets/desktop.js" type="module"></script>
+</body>
+</html>

@@ -1,0 +1,37 @@
+# Secretos y estado local (NUNCA commitear)
+.env
+.env.local
+.env.bak-*
+.env.bak-restore-*
+!.env.example
+data/
+backups/
+*.pem
+*.key
+*.crt
+
+# Artefactos de distribución (van a GitHub Releases, no a Git)
+*.tar.gz
+*.tgz
+*.deb
+
+# Logs
+logs/
+*.log
+
+# Node
+node_modules/
+npm-debug.log*
+
+# Python
+__pycache__/
+*.pyc
+
+# Sistema
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Salidas de pruebas
+tests/.artifacts/
+coverage/

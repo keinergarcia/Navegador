@@ -1,0 +1,31 @@
+{
+  "name": "CloudDesk (Codespaces)",
+  "image": "mcr.microsoft.com/devcontainers/universal:2",
+  "features": {
+    "ghcr.io/devcontainers/features/docker-in-docker:2": {
+      "moby": true,
+      "dockerDashComposeVersion": "v2"
+    }
+  },
+  "hostRequirements": {
+    "cpus": 2,
+    "memory": "8gb",
+    "storage": "32gb"
+  },
+  "forwardPorts": [8444, 9222],
+  "portsAttributes": {
+    "8444": {
+      "label": "CloudDesk · escritorio KasmVNC",
+      "onAutoForward": "notify",
+      "visibility": "private"
+    },
+    "9222": {
+      "label": "Chromium CDP (solo pruebas E2E)",
+      "onAutoForward": "silent",
+      "visibility": "private"
+    }
+  },
+  "postCreateCommand": "bash scripts/codespaces-up.sh --check-only || true",
+  "postStartCommand": "bash scripts/codespaces-up.sh --status || true",
+  "remoteUser": "vscode"
+}

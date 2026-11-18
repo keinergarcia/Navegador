@@ -1,0 +1,11 @@
+[Unit]
+Description=CloudDesk - renovación diaria de certificados
+
+[Timer]
+OnCalendar=*-*-* 03:17:00
+RandomizedDelaySec=3600
+Persistent=true
+Unit=clouddesk-renew.service
+
+[Install]
+WantedBy=timers.target

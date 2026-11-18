@@ -1,0 +1,13 @@
+[Unit]
+Description=CloudDesk - copia de seguridad
+Documentation=file:///opt/clouddesk/docs/07-operacion.md
+After=docker.service
+Requires=docker.service
+
+[Service]
+Type=oneshot
+WorkingDirectory=/opt/clouddesk
+ExecStart=/opt/clouddesk/scripts/backup.sh --keep 14
+TimeoutStartSec=900
+Nice=10
+IOSchedulingClass=idle

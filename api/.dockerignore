@@ -1,0 +1,10 @@
+# Contexto de build del API: solo package.json y src/ se copian.
+node_modules
+test
+tools
+coverage
+*.md
+.git
+.gitignore
+.env
+.env.*

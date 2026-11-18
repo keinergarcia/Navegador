@@ -1,0 +1,6 @@
+# Contexto de build del gateway: nginx.conf, templates y web/.
+.git
+.gitignore
+*.md
+tests
+**/.DS_Store

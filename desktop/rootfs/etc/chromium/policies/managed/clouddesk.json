@@ -1,0 +1,13 @@
+{
+  "RestoreOnStartup": 1,
+  "DefaultBrowserSettingEnabled": false,
+  "BackgroundModeEnabled": false,
+  "HardwareAccelerationModeEnabled": false,
+  "MetricsReportingEnabled": false,
+  "NetworkPredictionEnabled": true,
+  "PasswordManagerEnabled": true,
+  "AutofillCreditCardEnabled": false,
+  "BrowserSignin": 0,
+  "UrlKeyedAnonymizedDataCollectionEnabled": false,
+  "UserFeedbackAllowed": false
+}
