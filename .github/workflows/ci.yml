@@ -215,9 +215,10 @@ jobs:
           set -euo pipefail
           certs="$RUNNER_TEMP/certs"
           mkdir -p "$certs/live/desk.example.com"
+          # Sin -addext: Alpine usa LibreSSL, que no lo soporta. Con -k el SAN
+          # no importa para este test de arranque.
           openssl req -x509 -newkey rsa:2048 -nodes -days 1 \
             -subj "/CN=desk.example.com" \
-            -addext "subjectAltName=DNS:desk.example.com,DNS:vnc.example.com" \
             -keyout "$certs/live/desk.example.com/privkey.pem" \
             -out "$certs/live/desk.example.com/fullchain.pem" 2>/dev/null
           chmod -R a+r "$certs"
@@ -233,10 +234,13 @@ jobs:
             clouddesk/gateway:ci
           trap 'docker rm -f gateway-ci >/dev/null 2>&1 || true' EXIT
 
+          # --resolve fija el SNI a desk.example.com: con la IP el server
+          # default hace ssl_reject_handshake y corta el handshake.
           code=""
           for _ in $(seq 1 30); do
-            code="$(curl -sk -o /dev/null -w '%{http_code}' \
-              -H 'Host: desk.example.com' https://127.0.0.1:8443/healthz || true)"
+            code="$(curl -sk -o /dev/null -w '%{http_code}' --max-time 3 \
+              --resolve desk.example.com:8443:127.0.0.1 \
+              https://desk.example.com:8443/healthz || true)"
             [ "$code" = "200" ] && break
             sleep 1
           done
