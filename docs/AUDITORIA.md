@@ -15,10 +15,10 @@ robustez en scripts y configuración.
 
 | Severidad | Encontrados | Corregidos | Documentados |
 |---|---|---|---|
-| Alta | 1 | 1 | 0 |
+| Alta | 3 | 3 | 0 |
 | Media | 5 | 5 | 0 |
 | Baja | 9 | 7 | 2 |
-| Informativa | 4 | 1 | 3 |
+| Informativa | 5 | 1 | 4 |
 
 ## Hallazgos
 
@@ -144,6 +144,28 @@ expone a Internet, añadir MFA en el proxy. **Documentado.**
 El API registra la IP del cliente y los intentos fallidos. Es útil para
 diagnóstico y límite de intentos; no se registran contraseñas ni cookies.
 **Verificado por inspección.**
+
+### A-20 · Alta · KasmVNC rechazaba el bloque `logging`
+
+Detectado por la prueba E2E real (no por inspección): KasmVNC 1.5.2 exige
+`logging.log_writer_name`, `logging.log_dest` y `logging.level` juntos o
+ninguno. El template solo definía dos, la sesión entraba en FATAL y el puerto
+8444 nunca escuchaba. **Corregido** eliminando el bloque (valores por defecto).
+Verificado contra el esquema del propio `.deb` 1.5.2: 53/53 claves válidas y
+todos los enums correctos.
+
+### A-21 · Alta · Selector interactivo de entorno de escritorio
+
+KasmVNC lanza `select-de.sh` si no existe `~/.vnc/.de-was-selected`, ignorando
+el `xstartup` y quedándose esperando entrada. Además `-prompt false` se evalúa
+como verdadero en Perl (cadena no vacía). **Corregido**: se crea el marcador y
+se pasa `-prompt 0`. Con ello arranca XFCE y Chromium.
+
+### A-22 · Informativa · El 401 de KasmVNC no significa caída
+
+La prueba E2E trataba `401` como servicio caído; KasmVNC exige Basic auth y
+responde 401 en `/`. La señal correcta de arranque es CDP en 9222. **Corregido
+en el workflow.**
 
 ## Comprobaciones ejecutadas
 
