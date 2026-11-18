@@ -13,7 +13,7 @@
 // `apps-script.html` capturado, o descarga en vivo de APPS_SCRIPT_URL.
 // Sale con código 0 solo si todos los casos "CloudDesk" pasan como PC y los
 // casos de control (iPhone bloqueado, PC de oficina admitido) se cumplen.
-import { readFile, writeFile } from "node:fs/promises";
+import { readFile, writeFile, mkdir } from "node:fs/promises";
 import path from "node:path";
 
 const URL_DEFAULT =
@@ -92,6 +92,7 @@ function decodificarUserHtml(html) {
 }
 
 async function cargarUserHtml() {
+  await mkdir(ART, { recursive: true });
   try {
     const directo = await readFile(ARCHIVO_USERHTML, "utf8");
     if (directo.includes("function esMovil(")) return directo;
