@@ -34,6 +34,28 @@ inspeccionar el Chromium real. El puerto no se publica a Internet.
 2. **Code → Codespaces → Create codespace on main**.
 3. Espera a que termine el `postCreate` (instala Docker-in-Docker).
 
+### Contraseña de KasmVNC
+
+El arranque automático usa el secreto de Codespaces `VNC_PASSWORD`:
+
+1. <https://github.com/settings/codespaces> → **New secret**.
+2. Nombre: `VNC_PASSWORD` · Valor: una contraseña de 12+ caracteres.
+3. Repository access: **Navegador**.
+4. Guarda y (re)inicia el Codespace.
+
+Sin ese secreto se genera una contraseña aleatoria y se guarda en
+`tests/.artifacts/codespaces-vnc-password` dentro del Codespace (puedes verla
+con `cat` en la terminal del editor).
+
+### Arranque automático
+
+`postStartCommand` lanza `scripts/codespaces-boot.sh` en segundo plano:
+
+1. Espera a Docker-in-Docker (hasta 10 min).
+2. Construye la imagen si no existe (10–20 min la primera vez).
+3. Arranca el contenedor con el puerto 8444 y CDP en loopback.
+4. Deja el registro en `/tmp/clouddesk-boot.log`.
+
 ### Desde la CLI
 
 ```bash

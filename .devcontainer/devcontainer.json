@@ -26,6 +26,6 @@
     }
   },
   "postCreateCommand": "bash scripts/codespaces-up.sh --check-only || true",
-  "postStartCommand": "bash scripts/codespaces-up.sh --status || true",
+  "postStartCommand": "nohup setsid bash scripts/codespaces-boot.sh >/tmp/clouddesk-boot.out 2>&1 &",
   "remoteUser": "vscode"
 }

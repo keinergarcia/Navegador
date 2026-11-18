@@ -29,6 +29,7 @@ SECRET_FILE="$STATE_DIR/codespaces-vnc-password"
 
 ACTION="up"
 BUILD=1
+IF_NEEDED=0
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -38,6 +39,7 @@ while [[ $# -gt 0 ]]; do
     --stop) ACTION="stop" ;;
     --no-build) BUILD=0 ;;
     --rebuild) BUILD=1 ;;
+    --if-needed) IF_NEEDED=1 ;;
     -h|--help) sed -n '2,25p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
     *) die "opción desconocida: $1" ;;
   esac
@@ -65,6 +67,11 @@ fi
 if [[ "$ACTION" == "stop" ]]; then
   docker rm -f "$CONTAINER" >/dev/null 2>&1 || true
   ok "contenedor eliminado"
+  exit 0
+fi
+
+if [[ "$IF_NEEDED" -eq 1 ]] && docker inspect -f '{{.State.Running}}' "$CONTAINER" 2>/dev/null | grep -q true; then
+  ok "el escritorio ya está en marcha"
   exit 0
 fi
 
