@@ -87,6 +87,7 @@ const REQUIRED = [
   "docs/CI-CD.md",
   "docs/SEGURIDAD.md",
   "docs/PRUEBA-E2E.md",
+  "docs/CODESPACES.md",
 ];
 
 for (const rel of REQUIRED) {
