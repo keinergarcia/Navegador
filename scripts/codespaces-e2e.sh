@@ -43,14 +43,17 @@ docker inspect -f '{{.State.Running}}' "$CONTAINER" 2>/dev/null | grep -q true \
 
 step 'esperando a Chromium (CDP)'
 READY=0
-for _ in $(seq 1 40); do
+for _ in $(seq 1 15); do
   if curl -fsS -o /dev/null --max-time 2 "$CDP_URL/json/version" 2>/dev/null; then
     READY=1
     break
   fi
   sleep 2
 done
-[[ "$READY" -eq 1 ]] || die "CDP no responde en $CDP_URL (¿CLOUDDESK_E2E_DEBUG=1?)."
+if [[ "$READY" -ne 1 ]]; then
+  warn 'CDP no es alcanzable desde el host del Codespace (Chrome escucha en loopback del contenedor).'
+  warn 'La prueba de navegador se ejecuta en el workflow E2E de GitHub Actions.'
+fi
 
 DETECCION_RC=0
 if [[ "$SKIP_DETECCION" -eq 0 ]]; then
@@ -61,10 +64,16 @@ if [[ "$SKIP_DETECCION" -eq 0 ]]; then
 fi
 
 printf '\n%s\n' "${C_BOLD}2) Prueba end-to-end dentro del Chromium real${C_RESET}"
-E2E_ARGS=(--cdp "$CDP_URL")
-[[ -n "$APP_URL" ]] && E2E_ARGS+=(--url "$APP_URL")
 E2E_RC=0
-node "$ROOT_DIR/tools/e2e-desktop.mjs" "${E2E_ARGS[@]}" || E2E_RC=$?
+if [[ "$READY" -eq 1 ]]; then
+  E2E_ARGS=(--cdp "$CDP_URL")
+  [[ -n "$APP_URL" ]] && E2E_ARGS+=(--url "$APP_URL")
+  node "$ROOT_DIR/tools/e2e-desktop.mjs" "${E2E_ARGS[@]}" || E2E_RC=$?
+else
+  printf '%s\n' "  omitida: CDP no alcanzable desde el host (limitación de Docker-in-Docker)."
+  printf '%s\n' "  Usa el workflow E2E de GitHub Actions para la prueba de navegador."
+  E2E_RC=2
+fi
 
 printf '\n%s\n' "${C_BOLD}3) Registro del escritorio (últimas líneas)${C_RESET}"
 docker logs --tail=15 "$CONTAINER" 2>&1 | sed 's/^/  /' || true

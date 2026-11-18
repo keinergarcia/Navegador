@@ -13,10 +13,12 @@
 // auténtico no se detecta como móvil.
 //
 // Requisitos:
-//   - Escritorio arrancado con CDP habilitado:
-//       docker compose -f docker-compose.yml -f docker-compose.e2e.yml \
-//         up -d --force-recreate desktop
-//   - Puerto 9222 accesible en 127.0.0.1 (el override lo publica solo ahí).
+//   - Escritorio arrancado con CDP habilitado y red de host (Chrome escucha
+//     DevTools en 127.0.0.1 del contenedor):
+//       docker run -d --name desk-e2e --network host --shm-size=1g \
+//         -e AGENT_TOKEN=... -e VNC_PASSWORD=... -e CLOUDDESK_E2E_DEBUG=1 \
+//         clouddesk/desktop:1.5.2
+//   - CDP accesible en http://127.0.0.1:9222 (ver docs/PRUEBA-E2E.md).
 //
 // Uso:
 //   node tools/e2e-desktop.mjs

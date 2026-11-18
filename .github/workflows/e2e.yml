@@ -40,10 +40,12 @@ jobs:
       - name: Arrancar el escritorio (CDP solo en loopback)
         run: |
           set -euo pipefail
+          # Chrome escucha DevTools en 127.0.0.1 del contenedor; con el mapeo de
+          # puertos de Docker no es alcanzable. En un runner efímero usamos la
+          # red del host: el 9222 del contenedor ES el 9222 del runner.
           docker run -d --name desk-e2e \
+            --network host \
             --shm-size=1g \
-            -p 127.0.0.1:8444:8444 \
-            -p 127.0.0.1:9222:9222 \
             -e TZ=UTC \
             -e RESOLUTION=1366x768 \
             -e AGENT_TOKEN=0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef \

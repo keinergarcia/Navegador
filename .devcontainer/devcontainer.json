@@ -12,16 +12,11 @@
     "memory": "8gb",
     "storage": "32gb"
   },
-  "forwardPorts": [8444, 9222],
+  "forwardPorts": [8444],
   "portsAttributes": {
     "8444": {
       "label": "CloudDesk · escritorio KasmVNC",
       "onAutoForward": "notify",
-      "visibility": "private"
-    },
-    "9222": {
-      "label": "Chromium CDP (solo pruebas E2E)",
-      "onAutoForward": "silent",
       "visibility": "private"
     }
   },

@@ -78,21 +78,24 @@ Resultado actual:
 
 ## Cómo habilitar CDP (solo pruebas)
 
-El escritorio debe arrancar con `CLOUDDESK_E2E_DEBUG=1`:
+Chromium escucha DevTools en `127.0.0.1` **del contenedor** (la versión actual
+ignora `--remote-debugging-address`). Por eso el E2E se ejecuta con red de host:
 
 ```bash
-docker compose -f docker-compose.yml -f docker-compose.e2e.yml \
-  up -d --force-recreate desktop
+docker run -d --name desk-e2e --network host --shm-size=1g \
+  -e AGENT_TOKEN=0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef \
+  -e VNC_PASSWORD=e2e-password-1234 \
+  -e CLOUDDESK_E2E_DEBUG=1 \
+  clouddesk/desktop:1.5.2
+
+node tools/e2e-desktop.mjs --cdp http://127.0.0.1:9222
+docker rm -f desk-e2e
 ```
 
-Ese override publica `127.0.0.1:9222` **solo en loopback** y activa el flag
-`--remote-debugging-address=0.0.0.0` dentro del contenedor. Al terminar:
-
-```bash
-docker compose up -d --force-recreate desktop   # sin CDP
-```
-
-En Codespaces se hace automáticamente con `scripts/codespaces-up.sh`.
+El workflow `.github/workflows/e2e.yml` hace exactamente esto en un runner
+efímero. En Codespaces (Docker dentro de Docker) el 9222 del contenedor no es
+alcanzable desde el host del Codespace: allí se ejecuta la verificación de
+`esMovil()` y la prueba de navegador se cubre con el workflow de CI.
 
 ## Limitaciones conocidas
 

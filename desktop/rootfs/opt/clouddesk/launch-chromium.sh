@@ -36,11 +36,14 @@ ARGS=(
 )
 
 # Depuración remota SOLO para la prueba end-to-end (tools/e2e-desktop.mjs).
-# El puerto se escucha dentro del contenedor y únicamente se publica en
-# 127.0.0.1 del host mediante docker-compose.e2e.yml. Desactivado por defecto.
+# Chrome escucha DevTools en 127.0.0.1 del contenedor; para inspeccionarlo hay
+# que ejecutar el contenedor con --network host (ver docs/PRUEBA-E2E.md).
+# Desactivado por defecto.
 if [ "${CLOUDDESK_E2E_DEBUG:-0}" = "1" ]; then
-  ARGS+=(--remote-debugging-address=0.0.0.0 --remote-debugging-port=9222)
-  echo "[clouddesk] CDP habilitado en :9222 (solo pruebas E2E)" >&2
+  # Chrome ignora --remote-debugging-address y escucha en 127.0.0.1; el E2E
+  # debe ejecutarse con --network host (docs/PRUEBA-E2E.md).
+  ARGS+=(--remote-debugging-port=9222)
+  echo "[clouddesk] CDP habilitado en 127.0.0.1:9222 (solo pruebas E2E)" >&2
 fi
 
 # shellcheck disable=SC2086

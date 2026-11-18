@@ -116,9 +116,7 @@ docker run -d --name "$CONTAINER" \
   -e VNC_PASSWORD="$PASSWORD" \
   -e KASMVNC_MAX_FPS="${KASMVNC_MAX_FPS:-30}" \
   -e IDLE_STOP_MINUTES=0 \
-  -e CLOUDDESK_E2E_DEBUG=1 \
   -p 8444:8444 \
-  -p 127.0.0.1:9222:9222 \
   "$IMAGE" >/dev/null
 
 step 'esperando a que KasmVNC responda'
@@ -145,7 +143,6 @@ printf '\n%s\n' "${C_GREEN}${C_BOLD}Escritorio arrancado.${C_RESET}"
 printf '  URL        : %s\n' "$URL"
 printf '  Usuario    : desk\n'
 printf '  Contraseña : %s\n' "$C_BOLD$PASSWORD$C_RESET"
-printf '  CDP (E2E)  : http://127.0.0.1:9222\n'
 printf '\n%s\n' "El puerto 8444 es privado: solo lo abre tu sesión de GitHub."
 printf '%s\n' "Prueba: ./scripts/codespaces-e2e.sh"
 printf '%s\n' "Parar:  ./scripts/codespaces-up.sh --stop"

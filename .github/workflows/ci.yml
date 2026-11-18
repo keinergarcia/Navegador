@@ -54,7 +54,7 @@ jobs:
           python3 - <<'PY'
           import glob, sys, yaml
           files = glob.glob(".github/workflows/*.yml") + [
-              "docker-compose.yml", "docker-compose.e2e.yml", "docker-compose.prod.yml",
+              "docker-compose.yml", "docker-compose.prod.yml",
               ".github/dependabot.yml",
           ]
           for f in files:
@@ -80,7 +80,6 @@ jobs:
           printf "AUTH_PASSWORD_HASH='%s'\n" "$HASH" >> .env.ci
           printf "VNC_PASSWORD='%s'\n" 'ci-password-1234' >> .env.ci
           docker compose --env-file .env.ci config -q
-          docker compose --env-file .env.ci -f docker-compose.yml -f docker-compose.e2e.yml config -q
           docker compose --env-file .env.ci -f docker-compose.yml -f docker-compose.prod.yml config -q
           rm -f .env.ci
 

@@ -22,9 +22,10 @@ El stack completo (panel + edge) no se usa porque nginx enruta por nombre de
 host (`desk.*` y `vnc.*`) y Codespaces publica un hostname distinto por puerto.
 Para validar el stack completo está Oracle (`docs/DESPLIEGUE-ORACLE.md`).
 
-El contenedor se arranca con `CLOUDDESK_E2E_DEBUG=1`, que habilita CDP en
-`127.0.0.1:9222` **solo dentro del Codespace**, para que la prueba E2E pueda
-inspeccionar el Chromium real. El puerto no se publica a Internet.
+El E2E de navegador **no** se ejecuta dentro del Codespace: Chrome escucha
+DevTools en el loopback del contenedor y, con Docker-in-Docker, ese puerto no es
+alcanzable desde el host del Codespace. Esa prueba corre en el workflow
+`.github/workflows/e2e.yml`; aquí se ejecuta la verificación de `esMovil()`.
 
 ## Crear el Codespace
 
@@ -53,7 +54,7 @@ con `cat` en la terminal del editor).
 
 1. Espera a Docker-in-Docker (hasta 10 min).
 2. Construye la imagen si no existe (10–20 min la primera vez).
-3. Arranca el contenedor con el puerto 8444 y CDP en loopback.
+3. Arranca el contenedor con el puerto 8444.
 4. Deja el registro en `/tmp/clouddesk-boot.log`.
 
 ### Desde la CLI
@@ -80,7 +81,6 @@ Escritorio arrancado.
   URL        : https://<codespace>-8444.app.github.dev
   Usuario    : desk
   Contraseña : <generada>
-  CDP (E2E)  : http://127.0.0.1:9222
 ```
 
 - Abre la URL en el navegador. Si el puerto no aparece, ve a **Ports**, busca
@@ -121,5 +121,5 @@ Si sale `2`, inicia sesión en el Chromium del escritorio y repite; o pasa
 - Puerto 8444 privado (solo tu cuenta de GitHub).
 - Contraseña de KasmVNC generada aleatoriamente (24 caracteres) y guardada en
   `tests/.artifacts/codespaces-vnc-password` (ignorado por Git).
-- CDP en `127.0.0.1` del host del Codespace; no se publica.
+- El puerto 9222 no se publica: CDP solo se usa en el workflow de CI con red de host.
 - No se guardan secretos en el repositorio.

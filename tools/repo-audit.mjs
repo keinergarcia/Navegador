@@ -57,7 +57,6 @@ const REQUIRED = [
   ".gitattributes",
   ".env.example",
   "docker-compose.yml",
-  "docker-compose.e2e.yml",
   "Makefile",
   "api/Dockerfile",
   "api/package.json",
