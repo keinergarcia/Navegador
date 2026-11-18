@@ -5,8 +5,6 @@
 # =============================================================================
 
 resolver 127.0.0.11 valid=10s ipv6=off;
-set $api_upstream http://api:8080;
-set $desktop_upstream http://desktop:8444;
 
 # -----------------------------------------------------------------------------
 # HTTP (puerto 80): solo ACME + redirección a HTTPS
@@ -44,6 +42,8 @@ server {
     listen 443 ssl;
     http2 on;
     server_name ${PANEL_HOST};
+
+    set $api_upstream http://api:8080;
 
     ssl_certificate     /etc/letsencrypt/live/${PANEL_HOST}/fullchain.pem;
     ssl_certificate_key /etc/letsencrypt/live/${PANEL_HOST}/privkey.pem;
@@ -182,6 +182,8 @@ server {
 
     root /usr/share/nginx/html;
     client_max_body_size 16m;
+
+    set $desktop_upstream http://desktop:8444;
 
     auth_request /_auth;
     error_page 401 = @vnc_login;
