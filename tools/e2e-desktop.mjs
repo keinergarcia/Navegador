@@ -432,6 +432,45 @@ async function selftest(args) {
 // --------------------------------------------------------------------------- //
 // main
 // --------------------------------------------------------------------------- //
+// El userHtml de Apps Script vive en un iframe cross-origin (OOPIF), que en
+// Chrome corre en un target de DevTools propio y no aparece en el Runtime del
+// target principal. Recorre TODOS los targets y evalúa esMovil() y el texto de
+// bloqueo en cada contexto.
+async function scanAllTargets(base, env) {
+  const list = await fetchJson(`${base}/json/list`);
+  const out = { esMovil: [], alertas: [] };
+  for (const target of list) {
+    if (!target.webSocketDebuggerUrl || target.type === "worker") continue;
+    let cdp;
+    try {
+      cdp = new Cdp(target.webSocketDebuggerUrl);
+      await cdp.open();
+      const contexts = await collectContexts(cdp);
+      for (const ctx of contexts.values()) {
+        try {
+          const movil = await evaluate(cdp, ES_MOVIL_EXPR(env), ctx.id);
+          if (typeof movil === "boolean") {
+            out.esMovil.push({ origin: target.url, valor: movil });
+          }
+        } catch { /* sin acceso a este contexto */ }
+        try {
+          const text = await evaluate(
+            cdp,
+            "document.body ? String(document.body.innerText || document.body.textContent || '').slice(0, 4000) : ''",
+            ctx.id,
+          );
+          const bloqueo = text ? findBlock(text) : null;
+          if (bloqueo) out.alertas.push({ origin: target.url, texto: bloqueo });
+        } catch { /* sin acceso a este contexto */ }
+      }
+    } catch { /* target no accesible */ }
+    finally {
+      try { cdp?.close(); } catch { /* ya cerrado */ }
+    }
+  }
+  return out;
+}
+
 async function main() {
   const args = parseArgs(process.argv.slice(2));
   if (args.selftest) return selftest(args);
@@ -469,21 +508,14 @@ async function main() {
       outDir: path.resolve(args.out),
       label: labelBase,
     });
-    // El userHtml vive en un iframe sandbox que se monta tras la carga del
-    // contenedor; reintenta hasta que esMovil() aparezca en algún contexto.
+    // El userHtml vive en un iframe cross-origin (OOPIF); se escanea en todos
+    // los targets de DevTools y se reintenta hasta que esMovil() aparezca.
     const intentos = Math.floor(Math.min(args.timeout, 30_000) / 2500);
     for (let t = 1; t <= intentos && findings.esMovil.length === 0; t++) {
       await sleep(2500);
-      const otra = await inspect(cdp, {
-        strictEnv: true,
-        outDir: path.resolve(args.out),
-        label: `${labelBase}-${t}`,
-      });
-      findings.esMovil = otra.esMovil;
-      findings.alertas = otra.alertas;
-      findings.contexto = otra.contexto;
-      findings.env = otra.env;
-      if (otra.captura) findings.captura = otra.captura;
+      const scan = await scanAllTargets(base, findings.env);
+      findings.esMovil = scan.esMovil;
+      findings.alertas = scan.alertas;
     }
     const result = verdict(findings);
 
